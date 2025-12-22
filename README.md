@@ -1,2 +1,2 @@
 # ChatGPT-Dictation-Auto-Send
-Better expierience like in an mobile app
+Better expierience like in n mobile app
