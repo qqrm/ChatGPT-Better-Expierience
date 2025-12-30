@@ -930,7 +930,6 @@ declare global {
   async function runOneClickDeleteFlow() {
     if (oneClickDeleteState.deleting) return;
     oneClickDeleteState.deleting = true;
-    setOneClickDeleteDeleting(true);
     try {
       const deleteItem = await waitPresent(
         'div[role="menuitem"][data-testid="delete-chat-menu-item"]',
@@ -938,6 +937,7 @@ declare global {
         1500
       );
       if (!deleteItem) return;
+      setOneClickDeleteDeleting(true);
       humanClick(deleteItem as HTMLElement, "oneclick-delete-menu");
 
       const modal = await waitPresent(
@@ -1045,6 +1045,17 @@ declare global {
         ) {
           return;
         }
+        if ("autoExpandChats" in changes) {
+          const prev = Boolean(changes.autoExpandChats.oldValue);
+          const next = Boolean(changes.autoExpandChats.newValue);
+          if (next && !prev) {
+            autoExpandReset();
+            startAutoExpand();
+          }
+          if (!next && prev) {
+            stopAutoExpand();
+          }
+        }
         void refreshSettings();
       }
     );
@@ -1055,12 +1066,14 @@ declare global {
   const autoExpandState: {
     running: boolean;
     started: boolean;
+    completed: boolean;
     lastClickAtByKey: Map<string, number>;
     intervalId: number | null;
     observer: MutationObserver | null;
   } = {
     running: false,
     started: false,
+    completed: false,
     lastClickAtByKey: new Map(),
     intervalId: null,
     observer: null
@@ -1080,6 +1093,13 @@ declare global {
     for (const t of seq) {
       el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
     }
+  }
+
+  function autoExpandReset() {
+    autoExpandState.running = false;
+    autoExpandState.started = false;
+    autoExpandState.completed = false;
+    autoExpandState.lastClickAtByKey.clear();
   }
 
   function autoExpandClickIfPossible(key: string, el: HTMLElement | null, reason: string) {
@@ -1180,13 +1200,45 @@ declare global {
     );
   }
 
+  function autoExpandTryFinish() {
+    if (!autoExpandSidebarIsOpen()) {
+      autoExpandEnsureSidebarOpen();
+      return false;
+    }
+
+    const nav = autoExpandChatHistoryNav();
+    if (!nav || !isElementVisible(nav)) return false;
+
+    const sec = autoExpandFindYourChatsSection(nav);
+    if (!sec) return false;
+
+    if (!autoExpandSectionCollapsed(sec)) return true;
+
+    return autoExpandExpandYourChats();
+  }
+
+  function stopAutoExpand() {
+    if (autoExpandState.intervalId !== null) {
+      window.clearInterval(autoExpandState.intervalId);
+      autoExpandState.intervalId = null;
+    }
+    if (autoExpandState.observer) {
+      autoExpandState.observer.disconnect();
+      autoExpandState.observer = null;
+    }
+  }
+
   function autoExpandTick() {
     if (!CFG.autoExpandChatsEnabled) return;
+    if (autoExpandState.completed) return;
     if (autoExpandState.running) return;
     autoExpandState.running = true;
     try {
-      autoExpandEnsureSidebarOpen();
-      autoExpandExpandYourChats();
+      const done = autoExpandTryFinish();
+      if (done) {
+        autoExpandState.completed = true;
+        stopAutoExpand();
+      }
     } catch (e) {
       tmLog("AUTOEXPAND", "tick error", {
         preview: String((e && (e as Error).stack) || (e as Error).message || e)
