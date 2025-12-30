@@ -488,6 +488,20 @@ declare global {
     });
   }
 
+  async function stopGeneratingIfPossible(timeoutMs: number) {
+    const stopBtn = findStopGeneratingButton();
+    if (!stopBtn) return true;
+
+    tmLog("SEND", "stop generating before send", { btn: describeEl(stopBtn) });
+    humanClick(stopBtn, "stop generating");
+
+    const ok = await ensureNotGenerating(timeoutMs);
+    if (!ok) {
+      tmLog("SEND", "stop generating timeout");
+    }
+    return ok;
+  }
+
   async function clickSendWithAck() {
     const before = readInputText().text;
 
@@ -586,7 +600,7 @@ declare global {
         return;
       }
 
-      const okGen = await ensureNotGenerating(20000);
+      const okGen = await stopGeneratingIfPossible(20000);
       if (!okGen) {
         tmLog("FLOW", "abort: still generating");
         return;
