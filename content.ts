@@ -913,16 +913,67 @@ declare global {
     return localX >= rect.width - ONE_CLICK_DELETE_RIGHT_ZONE_PX;
   }
 
-  async function runOneClickDeleteFlow() {
+  function isMenuVisible(menu: HTMLElement) {
+    if (!isElementVisible(menu)) return false;
+    const state = menu.getAttribute("data-state");
+    if (state && state !== "open") return false;
+    return true;
+  }
+
+  function findMenuForOneClickButton(btn: HTMLElement) {
+    const controls = btn.getAttribute("aria-controls");
+    if (controls) {
+      const menu = document.getElementById(controls);
+      if (menu instanceof HTMLElement && isMenuVisible(menu)) return menu;
+    }
+
+    const menus = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-radix-menu-content][role="menu"]')
+    );
+    const visibleMenus = menus.filter((menu) => isMenuVisible(menu));
+    if (!visibleMenus.length) return null;
+
+    const btnRect = btn.getBoundingClientRect();
+    let bestMenu: HTMLElement | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const menu of visibleMenus) {
+      const r = menu.getBoundingClientRect();
+      const dx = Math.max(0, Math.max(btnRect.left - r.right, r.left - btnRect.right));
+      const dy = Math.max(0, Math.max(btnRect.top - r.bottom, r.top - btnRect.bottom));
+      const dist = Math.hypot(dx, dy);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        bestMenu = menu;
+      }
+    }
+    return bestMenu;
+  }
+
+  async function waitMenuForOneClickButton(btn: HTMLElement, timeoutMs = 1500) {
+    const t0 = performance.now();
+    while (performance.now() - t0 < timeoutMs) {
+      const menu = findMenuForOneClickButton(btn);
+      if (menu) return menu;
+      await sleep(25);
+    }
+    return null;
+  }
+
+  async function runOneClickDeleteFlow(btn: HTMLElement) {
     if (oneClickDeleteState.deleting) return;
     oneClickDeleteState.deleting = true;
     setOneClickDeleteDeleting(true);
     try {
-      const deleteItem = await waitPresent(
-        'div[role="menuitem"][data-testid="delete-chat-menu-item"]',
-        document,
-        1500
-      );
+      const menu = await waitMenuForOneClickButton(btn);
+      if (!menu) return;
+
+      const deleteItem =
+        menu.querySelector('div[role="menuitem"][data-testid="delete-chat-menu-item"]') ||
+        (await waitPresent(
+          'div[role="menuitem"][data-testid="delete-chat-menu-item"]',
+          menu,
+          1500
+        ));
       if (!deleteItem) return;
       humanClick(deleteItem as HTMLElement, "oneclick-delete-menu");
 
@@ -966,7 +1017,7 @@ declare global {
     if (!(btn instanceof HTMLElement)) return;
     if (!isOneClickDeleteRightZone(btn, ev)) return;
     setTimeout(() => {
-      runOneClickDeleteFlow().catch(() => {});
+      runOneClickDeleteFlow(btn).catch(() => {});
     }, 0);
   }
 
