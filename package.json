@@ -8,14 +8,14 @@
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test": "xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' bash -c \"node scripts/build.mjs && vitest run\""
+    "test": "node scripts/test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@typescript-eslint/eslint-plugin": "^8.43.0",
     "@typescript-eslint/parser": "^8.43.0",
     "esbuild": "^0.25.0",
-    "eslint": "^8.57.0",
+    "eslint": "8.57.1",
     "jsdom": "^26.1.0",
     "eslint-config-prettier": "^9.1.0",
     "playwright": "^1.55.0",
