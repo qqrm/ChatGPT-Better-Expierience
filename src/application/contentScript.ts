@@ -597,6 +597,24 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
     });
   }
 
+  function isComposerFocused() {
+    const textbox = findTextbox();
+    if (!textbox) return false;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return false;
+    return active === textbox || textbox.contains(active);
+  }
+
+  function isNonSkipModifierHeld() {
+    const allowShift = CFG.modifierKey === "Shift";
+    const allowCtrl = CFG.modifierKey === "Control";
+    const allowAlt = CFG.modifierKey === "Alt";
+    if (keyState.shift && !allowShift) return true;
+    if (keyState.ctrl && !allowCtrl) return true;
+    if (keyState.alt && !allowAlt) return true;
+    return false;
+  }
+
   function ensureNotGenerating(timeoutMs: number) {
     return new Promise<boolean>((resolve) => {
       const t0 = performance.now();
@@ -627,6 +645,30 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
       tmLog("SEND", "stop generating timeout");
     }
     return ok;
+  }
+
+  function findCodexSubmitButton(): HTMLButtonElement | null {
+    const form = qs<HTMLFormElement>('form[aria-label="Codex composer"]');
+    if (!form) return null;
+    const btn = form.querySelector('button[aria-label="Submit"]');
+    if (!(btn instanceof HTMLButtonElement)) return null;
+    if (!isElementVisible(btn)) return null;
+    return btn;
+  }
+
+  async function waitForAvailableButton(
+    finder: () => HTMLButtonElement | null,
+    timeoutMs: number,
+    reason: string
+  ) {
+    const t0 = performance.now();
+    while (performance.now() - t0 <= timeoutMs) {
+      const btn = finder();
+      if (btn && !isDisabled(btn) && isElementVisible(btn)) return btn;
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    tmLog("WAIT", `${reason} button timeout`, { timeoutMs });
+    return null;
   }
 
   async function clickSendWithAck() {
@@ -675,6 +717,9 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
   }
 
   let inFlight = false;
+  let transcribeInFlight = false;
+  let lastDictationSubmitClickAt = 0;
+  let transcribeHookInstalled = false;
 
   async function runFlowAfterSubmitClick(submitBtnDesc: string, clickHeld: boolean) {
     if (inFlight) {
@@ -682,6 +727,7 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
       return;
     }
     inFlight = true;
+    lastDictationSubmitClickAt = performance.now();
 
     try {
       const snap = readInputText();
@@ -752,6 +798,207 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
       inFlight = false;
       tmLog("FLOW", "submit click flow end");
     }
+  }
+
+  type TranscribeMode = "codex" | "chatgpt";
+
+  interface TranscribeFlowArgs {
+    mode: TranscribeMode;
+    beforeText: string;
+    beforeInputOk: boolean;
+  }
+
+  async function runFlowAfterTranscribe({ mode, beforeText, beforeInputOk }: TranscribeFlowArgs) {
+    if (inFlight) {
+      tmLog("TRANSCRIBE", "skip: submit flow in progress");
+      return;
+    }
+    if (transcribeInFlight) {
+      tmLog("TRANSCRIBE", "skip: inFlight already true");
+      return;
+    }
+    transcribeInFlight = true;
+
+    try {
+      await refreshSettings();
+      if (!CFG.enabled) {
+        tmLog("TRANSCRIBE", "auto-send disabled");
+        return;
+      }
+
+      const heldDuring = isModifierHeldNow();
+      const decision = decideAutoSend({ holdToSend: CFG.holdToSend, heldDuring });
+
+      if (mode === "codex") {
+        if (!CFG.allowAutoSendInCodex) {
+          tmLog("CODEX", "auto-send disabled by settings");
+          return;
+        }
+
+        if (!decision.shouldSend) {
+          tmLog("CODEX", "send skipped by modifier", {
+            heldDuring: decision.heldDuring,
+            holdToSend: decision.holdToSend,
+            shouldSend: decision.shouldSend
+          });
+          return;
+        }
+
+        const finalRes = await waitForFinalText({
+          snapshot: beforeText,
+          timeoutMs: CFG.finalTextTimeoutMs,
+          quietMs: CFG.finalTextQuietMs
+        });
+
+        if (!finalRes.ok) {
+          tmLog("CODEX", "final text timeout");
+          return;
+        }
+
+        if ((finalRes.text || "").trim().length === 0) {
+          tmLog("CODEX", "final text empty");
+          return;
+        }
+
+        const btn = await waitForAvailableButton(findCodexSubmitButton, 2500, "codex");
+        if (!btn) {
+          tmLog("CODEX", "submit button not found");
+          return;
+        }
+
+        humanClick(btn, "codex submit");
+        tmLog("CODEX", "submit clicked");
+        return;
+      }
+
+      if (findStopGeneratingButton()) {
+        tmLog("TRANSCRIBE", "skip: generation in progress");
+        return;
+      }
+
+      if (performance.now() - lastDictationSubmitClickAt < CFG.finalTextTimeoutMs) {
+        tmLog("TRANSCRIBE", "skip: dictation submit click observed");
+        return;
+      }
+
+      if (isNonSkipModifierHeld()) {
+        tmLog("TRANSCRIBE", "skip: modifier held");
+        return;
+      }
+
+      if (!isComposerFocused()) {
+        tmLog("TRANSCRIBE", "skip: composer not focused");
+        return;
+      }
+
+      if ((beforeText || "").trim().length > 0) {
+        tmLog("TRANSCRIBE", "skip: input not empty before dictation");
+        return;
+      }
+
+      if (!beforeInputOk) {
+        tmLog("TRANSCRIBE", "skip: input not found before dictation");
+        return;
+      }
+
+      const finalRes = await waitForFinalText({
+        snapshot: beforeText,
+        timeoutMs: CFG.finalTextTimeoutMs,
+        quietMs: CFG.finalTextQuietMs
+      });
+
+      if (!finalRes.ok) {
+        tmLog("TRANSCRIBE", "final text timeout");
+        return;
+      }
+
+      if ((finalRes.text || "").trim().length === 0) {
+        tmLog("TRANSCRIBE", "final text empty");
+        return;
+      }
+
+      if (!decision.shouldSend) {
+        tmLog("TRANSCRIBE", "send skipped by modifier", {
+          heldDuring: decision.heldDuring,
+          holdToSend: decision.holdToSend,
+          shouldSend: decision.shouldSend
+        });
+        return;
+      }
+
+      const btn = await waitForAvailableButton(findSendButton, 2500, "send");
+      if (!btn) {
+        tmLog("TRANSCRIBE", "send button not found");
+        return;
+      }
+
+      const ok = await clickSendWithAck();
+      tmLog("TRANSCRIBE", "send result", { ok });
+    } catch (e) {
+      tmLog("ERR", "transcribe flow exception", {
+        preview: String((e && (e as Error).stack) || (e as Error).message || e)
+      });
+    } finally {
+      transcribeInFlight = false;
+    }
+  }
+
+  const TRANSCRIBE_HOOK_SOURCE = "tm-dictation-transcribe";
+  const transcribeSnapshots = new Map<string, InputReadResult>();
+
+  function injectPageTranscribeHook() {
+    const runtime =
+      (
+        globalThis as typeof globalThis & {
+          chrome?: { runtime?: { getURL?: (p: string) => string } };
+        }
+      ).chrome?.runtime ??
+      (
+        globalThis as typeof globalThis & {
+          browser?: { runtime?: { getURL?: (p: string) => string } };
+        }
+      ).browser?.runtime;
+
+    if (!runtime?.getURL) {
+      tmLog("TRANSCRIBE", "runtime.getURL not available");
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.setAttribute("data-tm-transcribe-hook", "1");
+    script.dataset.source = TRANSCRIBE_HOOK_SOURCE;
+    script.src = runtime.getURL("pageTranscribeHook.js");
+    script.onload = () => script.remove();
+    document.documentElement.appendChild(script);
+  }
+
+  function installTranscribeHook({ mode }: { mode: TranscribeMode }) {
+    if (transcribeHookInstalled) return;
+    transcribeHookInstalled = true;
+
+    injectPageTranscribeHook();
+
+    window.addEventListener("message", (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const data = event.data as { source?: string; type?: string; id?: string };
+      if (!data || data.source !== TRANSCRIBE_HOOK_SOURCE) return;
+      if (!data.type || !data.id) return;
+
+      if (data.type === "start") {
+        transcribeSnapshots.set(data.id, readInputText());
+        return;
+      }
+
+      if (data.type === "complete") {
+        const snapshot = transcribeSnapshots.get(data.id);
+        if (snapshot) transcribeSnapshots.delete(data.id);
+        void runFlowAfterTranscribe({
+          mode,
+          beforeText: snapshot?.text ?? "",
+          beforeInputOk: snapshot?.ok ?? false
+        });
+      }
+    });
   }
 
   function isInterestingButton(btn: HTMLButtonElement | null) {
@@ -1397,6 +1644,8 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
     startAutoExpand();
     startAutoTempChat();
   }
+
+  installTranscribeHook({ mode: isCodexPath(location.pathname) ? "codex" : "chatgpt" });
 
   document.addEventListener(
     "click",
