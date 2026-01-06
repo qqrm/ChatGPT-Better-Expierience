@@ -656,9 +656,15 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
         const btn = findCodexSubmitButton();
         const btnReady = !!btn && !isDisabled(btn) && isElementVisible(btn);
 
-        if (btnReady && (stableTextReady || seenNonEmpty || !cur.ok)) {
-          resolve({ ok: true, text: v, kind: cur.kind, inputOk: cur.ok, btn });
-          return;
+        if (btnReady) {
+          const allowReady =
+            stableTextReady ||
+            (seenNonEmpty && stableForMs >= quietMs) ||
+            (!cur.ok && seenNonEmpty);
+          if (allowReady) {
+            resolve({ ok: true, text: v, kind: cur.kind, inputOk: cur.ok, btn });
+            return;
+          }
         }
 
         if (performance.now() - t0 > timeoutMs) {
