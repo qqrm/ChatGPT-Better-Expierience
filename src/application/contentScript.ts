@@ -77,6 +77,7 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
     autoExpandChatsEnabled: boolean;
     autoTempChatEnabled: boolean;
     oneClickDeleteEnabled: boolean;
+    wideChatWidth: number;
     logClicks: boolean;
     logBlur: boolean;
   }
@@ -93,6 +94,7 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
     autoExpandChatsEnabled: true,
     autoTempChatEnabled: false,
     oneClickDeleteEnabled: false,
+    wideChatWidth: 0,
 
     finalTextTimeoutMs: 25000,
     finalTextQuietMs: 320,
@@ -1163,6 +1165,7 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
     CFG.autoExpandChatsEnabled = settings.autoExpandChats;
     CFG.autoTempChatEnabled = settings.autoTempChat;
     CFG.oneClickDeleteEnabled = settings.oneClickDelete;
+    CFG.wideChatWidth = settings.wideChatWidth;
     tempChatEnabled = settings.tempChatEnabled;
     log("settings refreshed", {
       skipKey: CFG.modifierKey,
@@ -1172,10 +1175,12 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
       autoExpandChats: CFG.autoExpandChatsEnabled,
       autoTempChat: CFG.autoTempChatEnabled,
       oneClickDelete: CFG.oneClickDeleteEnabled,
+      wideChatWidth: CFG.wideChatWidth,
       tempChatEnabled
     });
     maybeEnableTempChat();
     updateOneClickDeleteState();
+    updateWideChatState();
   }
 
   let graceUntilMs = 0;
@@ -1270,6 +1275,126 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
     }, 100);
 
     maybeEnableTempChat();
+  }
+
+  const WIDE_CHAT_STYLE_ID = "qqrm-wide-chat-style";
+  const WIDE_CHAT_FULL_WIDTH_PCT = 0.95;
+
+  const wideChatState: {
+    started: boolean;
+    observer: MutationObserver | null;
+    resizeHandler: (() => void) | null;
+    baseWidthPx: number | null;
+    scheduled: boolean;
+  } = {
+    started: false,
+    observer: null,
+    resizeHandler: null,
+    baseWidthPx: null,
+    scheduled: false
+  };
+
+  function findWideChatContentEl() {
+    return (
+      document.querySelector('main [class*="max-w-(--thread-content-max-width)"]') ||
+      document.querySelector('[class*="max-w-(--thread-content-max-width)"]')
+    );
+  }
+
+  function ensureWideChatBaseWidth() {
+    if (wideChatState.baseWidthPx !== null) return wideChatState.baseWidthPx;
+    const contentEl = findWideChatContentEl();
+    if (!contentEl) return null;
+    const rect = contentEl.getBoundingClientRect();
+    if (rect.width <= 1) return null;
+    wideChatState.baseWidthPx = Math.round(rect.width);
+    return wideChatState.baseWidthPx;
+  }
+
+  function ensureWideChatStyle() {
+    let style = document.getElementById(WIDE_CHAT_STYLE_ID);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = WIDE_CHAT_STYLE_ID;
+      document.documentElement.appendChild(style);
+    }
+    return style;
+  }
+
+  function removeWideChatStyle() {
+    const style = document.getElementById(WIDE_CHAT_STYLE_ID);
+    if (style) style.remove();
+  }
+
+  function applyWideChatWidth() {
+    if (CFG.wideChatWidth <= 0) return;
+    const basePx = ensureWideChatBaseWidth();
+    if (!basePx) return;
+    const fullPx = Math.round(window.innerWidth * WIDE_CHAT_FULL_WIDTH_PCT);
+    const sideMarginPx = Math.max(0, Math.round((window.innerWidth - fullPx) / 2));
+    const targetPx = Math.round(basePx + (CFG.wideChatWidth / 100) * (fullPx - basePx));
+    const maxAllowedPx = Math.max(320, fullPx);
+    const style = ensureWideChatStyle();
+    style.textContent = `
+      :root{
+        --wide-chat-target-max-width: ${targetPx}px;
+        --wide-chat-side-margin: ${sideMarginPx}px;
+        --wide-chat-max-allowed: ${maxAllowedPx}px;
+      }
+
+      [class*="px-(--thread-content-margin)"]{
+        --thread-content-margin: var(--wide-chat-side-margin) !important;
+      }
+
+      [class*="max-w-(--thread-content-max-width)"]{
+        --thread-content-max-width: var(--wide-chat-target-max-width) !important;
+        max-width: min(var(--wide-chat-target-max-width), var(--wide-chat-max-allowed)) !important;
+      }
+    `;
+  }
+
+  function scheduleWideChatUpdate() {
+    if (wideChatState.scheduled) return;
+    wideChatState.scheduled = true;
+    requestAnimationFrame(() => {
+      wideChatState.scheduled = false;
+      applyWideChatWidth();
+    });
+  }
+
+  function startWideChat() {
+    if (wideChatState.started) return;
+    wideChatState.started = true;
+    wideChatState.baseWidthPx = null;
+    wideChatState.resizeHandler = () => scheduleWideChatUpdate();
+    window.addEventListener("resize", wideChatState.resizeHandler, { passive: true });
+    wideChatState.observer = new MutationObserver(() => scheduleWideChatUpdate());
+    wideChatState.observer.observe(document.documentElement, { childList: true, subtree: true });
+    scheduleWideChatUpdate();
+  }
+
+  function stopWideChat() {
+    if (!wideChatState.started) return;
+    wideChatState.started = false;
+    if (wideChatState.resizeHandler) {
+      window.removeEventListener("resize", wideChatState.resizeHandler);
+      wideChatState.resizeHandler = null;
+    }
+    if (wideChatState.observer) {
+      wideChatState.observer.disconnect();
+      wideChatState.observer = null;
+    }
+    wideChatState.baseWidthPx = null;
+    removeWideChatStyle();
+  }
+
+  function updateWideChatState() {
+    if (CFG.wideChatWidth > 0) {
+      if (!wideChatState.started) startWideChat();
+      else scheduleWideChatUpdate();
+      return;
+    }
+    stopWideChat();
   }
 
   const ONE_CLICK_DELETE_HOOK_MARK = "data-qqrm-oneclick-del-hooked";
@@ -1542,6 +1667,7 @@ export const startContentScript = ({ storagePort }: ContentScriptDeps = {}) => {
           !("editLastMessageOnArrowUp" in changes) &&
           !("autoTempChat" in changes) &&
           !("oneClickDelete" in changes) &&
+          !("wideChatWidth" in changes) &&
           !("tempChatEnabled" in changes))
       ) {
         return;

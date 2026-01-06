@@ -34,7 +34,8 @@ describe("popup settings", () => {
       autoExpandChats: "yes",
       autoTempChat: false,
       tempChatEnabled: true,
-      oneClickDelete: "no"
+      oneClickDelete: "no",
+      wideChatWidth: 42
     };
     const storagePort: StoragePort = {
       get: <T extends SettingsRecord>(defaults: T) =>
@@ -52,7 +53,8 @@ describe("popup settings", () => {
       autoExpandChats: SETTINGS_DEFAULTS.autoExpandChats,
       autoTempChat: false,
       tempChatEnabled: true,
-      oneClickDelete: SETTINGS_DEFAULTS.oneClickDelete
+      oneClickDelete: SETTINGS_DEFAULTS.oneClickDelete,
+      wideChatWidth: 42
     });
     expect(hint).toBe("Auto-send happens only while holding Alt when you accept dictation.");
   });
@@ -74,7 +76,8 @@ describe("popup settings", () => {
       editLastMessageOnArrowUp: true,
       autoExpandChats: false,
       autoTempChat: true,
-      oneClickDelete: true
+      oneClickDelete: true,
+      wideChatWidth: 70
     };
 
     const { hint } = await savePopupSettings({ storagePort }, input);

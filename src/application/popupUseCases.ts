@@ -40,6 +40,7 @@ export interface PopupSettingsInput {
   autoExpandChats: boolean;
   autoTempChat: boolean;
   oneClickDelete: boolean;
+  wideChatWidth: number;
 }
 
 export async function savePopupSettings(

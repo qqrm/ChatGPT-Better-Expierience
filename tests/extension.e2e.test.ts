@@ -103,7 +103,8 @@ describe("extension e2e", () => {
       autoExpandChats: false,
       autoTempChat: true,
       tempChatEnabled: true,
-      oneClickDelete: true
+      oneClickDelete: true,
+      wideChatWidth: 35
     });
     await page.goto(popupUrl);
     await page.waitForSelector("#skipKey");
@@ -113,12 +114,22 @@ describe("extension e2e", () => {
     expect(await page.isChecked("#autoExpandChats")).toBe(false);
     expect(await page.isChecked("#autoTempChat")).toBe(true);
     expect(await page.isChecked("#oneClickDelete")).toBe(true);
+    expect(await page.inputValue("#wideChatWidth")).toBe("35");
 
     await page.selectOption("#skipKey", "Shift");
     await page.setChecked("#holdToSend", false);
     await page.setChecked("#autoExpandChats", true);
     await page.setChecked("#autoTempChat", false);
     await page.setChecked("#oneClickDelete", false);
+    await page.$eval(
+      "#wideChatWidth",
+      (el, value) => {
+        const input = el as HTMLInputElement;
+        input.value = String(value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+      "80"
+    );
 
     await page.waitForFunction(() => {
       const data = window.__testStorage ?? {};
@@ -128,7 +139,8 @@ describe("extension e2e", () => {
         data.autoExpandChats === true &&
         data.autoTempChat === false &&
         data.tempChatEnabled === false &&
-        data.oneClickDelete === false
+        data.oneClickDelete === false &&
+        data.wideChatWidth === 80
       );
     });
 

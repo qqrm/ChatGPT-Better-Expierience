@@ -33,6 +33,10 @@
         font: inherit;
       }
 
+      input[type="range"] {
+        width: 100%;
+      }
+
       select {
         min-width: 140px;
       }
@@ -106,6 +110,17 @@
         <label for="oneClickDelete">One-click delete in chat list</label>
       </div>
     </div>
+
+    <div class="row">
+      <label for="wideChatWidth">Chat width</label>
+      <span id="wideChatWidthValue">0%</span>
+    </div>
+
+    <div class="row">
+      <input id="wideChatWidth" type="range" min="0" max="100" step="1" />
+    </div>
+
+    <div class="hint">0 = base width · 100 = 95% of the viewport</div>
 
     <div class="hint" id="hint"></div>
 
