@@ -25,6 +25,8 @@ const editLastMessageEl = mustGetElement<HTMLInputElement>("editLastMessageOnArr
 const autoExpandEl = mustGetElement<HTMLInputElement>("autoExpandChats");
 const autoTempChatEl = mustGetElement<HTMLInputElement>("autoTempChat");
 const oneClickDeleteEl = mustGetElement<HTMLInputElement>("oneClickDelete");
+const wideChatWidthEl = mustGetElement<HTMLInputElement>("wideChatWidth");
+const wideChatWidthValueEl = mustGetElement<HTMLElement>("wideChatWidthValue");
 
 const storageApi = (
   (typeof browser !== "undefined" ? browser : chrome) as { storage?: StorageApi } | undefined
@@ -45,11 +47,14 @@ async function load() {
   autoExpandEl.checked = settings.autoExpandChats;
   autoTempChatEl.checked = settings.autoTempChat;
   oneClickDeleteEl.checked = settings.oneClickDelete;
+  wideChatWidthEl.value = String(settings.wideChatWidth);
+  wideChatWidthValueEl.textContent = `${settings.wideChatWidth}%`;
 
   hintEl.textContent = hint;
 }
 
 async function save() {
+  const wideChatWidth = Math.min(100, Math.max(0, Number(wideChatWidthEl.value) || 0));
   const input = {
     skipKey: selectEl.value,
     holdToSend: !!holdEl.checked,
@@ -57,11 +62,13 @@ async function save() {
     editLastMessageOnArrowUp: !!editLastMessageEl.checked,
     autoExpandChats: !!autoExpandEl.checked,
     autoTempChat: !!autoTempChatEl.checked,
-    oneClickDelete: !!oneClickDeleteEl.checked
+    oneClickDelete: !!oneClickDeleteEl.checked,
+    wideChatWidth
   };
 
   const { hint } = await savePopupSettings(popupDeps, input);
   hintEl.textContent = hint;
+  wideChatWidthValueEl.textContent = `${wideChatWidth}%`;
 }
 
 selectEl.addEventListener("change", () => void save().catch(() => {}));
@@ -71,5 +78,6 @@ editLastMessageEl.addEventListener("change", () => void save().catch(() => {}));
 autoExpandEl.addEventListener("change", () => void save().catch(() => {}));
 autoTempChatEl.addEventListener("change", () => void save().catch(() => {}));
 oneClickDeleteEl.addEventListener("change", () => void save().catch(() => {}));
+wideChatWidthEl.addEventListener("input", () => void save().catch(() => {}));
 
 void load().catch(() => {});
