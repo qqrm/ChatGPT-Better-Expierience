@@ -9,11 +9,103 @@ type DictationTestApi = {
   runAutoSendFlow?: (snapshotOverride?: string, initialShiftHeld?: boolean) => Promise<void> | void;
 };
 
+const renderCurrentChatGptComposer = (dictationLabel = "Start dictation") => {
+  document.body.innerHTML = `
+    <main role="main">
+      <form autocomplete="off" class="group/composer w-full">
+        <div class="grid grid-cols-[auto_1fr_auto]">
+          <div class="[grid-area:leading]">
+            <button type="button" class="composer-btn" data-testid="composer-plus-btn" aria-label="Add files and more">
+              Add
+            </button>
+          </div>
+          <div class="[grid-area:primary]">
+            <div class="wcDTda_prosemirror-parent">
+              <textarea
+                class="wcDTda_fallbackTextarea"
+                name="prompt-textarea"
+                aria-label="Chat with ChatGPT"
+                placeholder="Ask anything"
+                style="display: none;"
+              ></textarea>
+              <div
+                contenteditable="true"
+                class="ProseMirror"
+                id="prompt-textarea"
+                role="textbox"
+                aria-multiline="true"
+                aria-label="Chat with ChatGPT"
+              >
+                <p></p>
+              </div>
+            </div>
+          </div>
+          <div class="[grid-area:trailing]">
+            <button aria-label="${dictationLabel}" type="button" class="composer-btn h-9 min-h-9 w-9 min-w-9">
+              Dictate
+            </button>
+            <button id="composer-submit-button" aria-label="Send prompt" data-testid="send-button" class="composer-submit-btn composer-submit-button-color h-9 w-9">
+              Send
+            </button>
+          </div>
+        </div>
+      </form>
+    </main>
+  `;
+};
+
 describe("dictationAutoSend", () => {
   afterEach(() => {
     vi.useRealTimers();
     window.history.replaceState({}, "", "/");
     document.body.innerHTML = "";
+  });
+
+  it("starts dictation from current ChatGPT composer DOM on Ctrl+Space", async () => {
+    renderCurrentChatGptComposer();
+
+    const dictationBtn = document.querySelector<HTMLElement>('[aria-label="Start dictation"]');
+    expect(dictationBtn).not.toBeNull();
+
+    let dictationClicks = 0;
+    dictationBtn?.addEventListener("click", () => {
+      dictationClicks += 1;
+    });
+
+    const handle = initDictationAutoSendFeature(
+      makeTestContext({ startDictation: true, autoSend: true, allowAutoSendInCodex: true })
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: " ",
+        code: "Space",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true
+      })
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dictationClicks).toBe(1);
+
+    handle.dispose();
+  });
+
+  it("treats current Start dictation control as a toggle, not a submit state", () => {
+    renderCurrentChatGptComposer();
+
+    const handle = initDictationAutoSendFeature(
+      makeTestContext({ autoSend: true, allowAutoSendInCodex: true })
+    );
+    const testApi = handle.__test as DictationTestApi;
+
+    expect(testApi.findSubmitDictationButton()).toBeNull();
+    expect(testApi.getDictationUiState()).toBe("NONE");
+
+    handle.dispose();
   });
 
   it("does not classify regular send button as dictation submit during UI rebind", async () => {
