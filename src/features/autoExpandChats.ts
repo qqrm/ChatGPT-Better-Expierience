@@ -54,7 +54,21 @@ function findYourChatsToggle(nav: HTMLElement): HTMLButtonElement | null {
 
   for (const section of sections) {
     const text = norm(section.textContent);
-    if (!text.includes("your chats") && !text.includes("чаты") && !text.includes("история")) {
+    const headerText = norm(
+      section.querySelector<HTMLElement>("h1, h2, h3, [role='heading'], button[aria-expanded]")
+        ?.textContent ?? ""
+    );
+    const looksLikeChatsSection =
+      headerText === "chats" ||
+      headerText === "your chats" ||
+      headerText.includes("your chats") ||
+      headerText.includes("чаты") ||
+      headerText.includes("история") ||
+      text.includes("your chats") ||
+      text.includes("чаты") ||
+      text.includes("история");
+
+    if (!looksLikeChatsSection) {
       continue;
     }
 
