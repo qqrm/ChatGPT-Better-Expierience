@@ -10,6 +10,7 @@ const MAIN_COMPOSER_MARKERS = [
   "#thread-bottom",
   "#thread-bottom-container",
   ".composer-parent",
+  'form[class~="group/composer"]',
   "footer"
 ];
 

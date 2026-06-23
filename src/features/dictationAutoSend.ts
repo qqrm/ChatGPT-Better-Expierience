@@ -133,10 +133,22 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
     const byId = document.getElementById("prompt-textarea");
     if (byId) return byId.closest("form") ?? byId.closest('[data-testid="composer"]');
 
-    return (
+    const explicitComposer =
       document.querySelector('form[data-testid="composer"]') ??
       document.querySelector('[data-testid="composer"]') ??
-      null
+      Array.from(document.querySelectorAll("form")).find((form) =>
+        form.classList.contains("group/composer")
+      ) ??
+      null;
+    if (explicitComposer) return explicitComposer;
+
+    return (
+      Array.from(document.querySelectorAll("form")).find(
+        (form) =>
+          !!form.querySelector(
+            "#prompt-textarea, [name='prompt-textarea'], [aria-label='Start dictation']"
+          )
+      ) ?? null
     );
   };
 
@@ -181,6 +193,11 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
 
     return null;
   };
+
+  const hasDictationMarker = (value: string) =>
+    /dictat|dictation|microphone|\bmic\b|voice|speech|record|диктов|микроф|голос|надикт|запис/.test(
+      value
+    );
 
   const readTextboxText = (el: HTMLTextAreaElement | HTMLElement | null) => {
     if (!el) return "";
@@ -442,9 +459,7 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
     const dt = norm(dtRaw).trim();
     const txt = norm(txtRaw).trim();
 
-    const hasExplicitDictationMarker = [a, t, dt, txt].some((value) =>
-      /dictat|dictation|microphone|диктов|микроф|голос|надикт|voice/.test(value)
-    );
+    const hasExplicitDictationMarker = [a, t, dt, txt].some(hasDictationMarker);
 
     const inDictationActionContainer = findDictationActionContainers().some((container) =>
       container.contains(btn)
@@ -523,18 +538,40 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
     const a = norm(btn.getAttribute("aria-label"));
     const t = norm(btn.getAttribute("title"));
     const dt = norm(btn.getAttribute("data-testid"));
-    if (dt.includes("send") || dt.includes("stop") || dt.includes("voice") || dt.includes("dict"))
+    if (
+      dt.includes("send") ||
+      dt.includes("stop") ||
+      dt.includes("voice") ||
+      dt.includes("dict") ||
+      dt.includes("speech") ||
+      dt.includes("record")
+    )
       return true;
-    if (a.includes("send") || a.includes("stop") || a.includes("dictat") || a.includes("voice"))
+    if (
+      a.includes("send") ||
+      a.includes("stop") ||
+      a.includes("dictat") ||
+      a.includes("voice") ||
+      a.includes("speech") ||
+      a.includes("record")
+    )
       return true;
     if (
       a.includes("отправ") ||
       a.includes("останов") ||
       a.includes("диктов") ||
-      a.includes("микроф")
+      a.includes("микроф") ||
+      a.includes("запис")
     )
       return true;
-    if (t.includes("send") || t.includes("stop") || t.includes("voice") || t.includes("dict"))
+    if (
+      t.includes("send") ||
+      t.includes("stop") ||
+      t.includes("voice") ||
+      t.includes("dict") ||
+      t.includes("speech") ||
+      t.includes("record")
+    )
       return true;
     return false;
   };
@@ -674,7 +711,9 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
   const isSafeToTriggerDictation = () => {
     const active = document.activeElement;
     const composerInput = findComposerInput();
-    if (!composerInput || !isElementVisible(composerInput)) return false;
+    const composerRoot = findComposerRoot();
+    const composerInputVisible = !!composerInput && isElementVisible(composerInput);
+    if (!composerInputVisible && !composerRoot) return false;
 
     if (
       active instanceof HTMLInputElement ||
@@ -683,6 +722,7 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
     ) {
       if (active === composerInput) return true;
       if (composerInput instanceof HTMLElement && composerInput.contains(active)) return true;
+      if (composerRoot instanceof HTMLElement && composerRoot.contains(active)) return true;
       return false;
     }
 
@@ -700,7 +740,6 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
 
   const isDictationButtonVisible = (btn: HTMLElement | null) => {
     if (!btn) return false;
-    if (btn.offsetParent === null) return false;
     return isElementVisible(btn);
   };
 
@@ -708,7 +747,12 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
     const found: HTMLElement[] = [];
     const direct = Array.from(
       root.querySelectorAll<HTMLElement>(
-        'button[aria-label="Dictate button"], [role="button"][aria-label="Dictate button"]'
+        [
+          'button[aria-label="Dictate button"]',
+          '[role="button"][aria-label="Dictate button"]',
+          'button[aria-label="Start dictation"]',
+          '[role="button"][aria-label="Start dictation"]'
+        ].join(",")
       )
     );
     for (const btn of direct) {
@@ -724,12 +768,16 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
       '[role="button"][aria-label*="microphone" i]',
       '[role="button"][aria-label*="голос" i]',
       '[role="button"][aria-label*="voice" i]',
+      '[role="button"][aria-label*="speech" i]',
+      '[role="button"][aria-label*="record" i]',
       'button[aria-label*="dictat" i]',
       'button[aria-label*="dictation" i]',
       'button[aria-label*="диктов" i]',
       'button[aria-label*="microphone" i]',
       'button[aria-label*="голос" i]',
-      'button[aria-label*="voice" i]'
+      'button[aria-label*="voice" i]',
+      'button[aria-label*="speech" i]',
+      'button[aria-label*="record" i]'
     ];
 
     const candidates = Array.from(root.querySelectorAll<HTMLElement>(fallbackSelectors.join(",")));
@@ -744,7 +792,12 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
 
   const findDictationButtonIn = (root: Document | Element) => {
     const direct = root.querySelector<HTMLElement>(
-      'button[aria-label="Dictate button"], [role="button"][aria-label="Dictate button"]'
+      [
+        'button[aria-label="Dictate button"]',
+        '[role="button"][aria-label="Dictate button"]',
+        'button[aria-label="Start dictation"]',
+        '[role="button"][aria-label="Start dictation"]'
+      ].join(",")
     );
     if (direct && isDictationButtonVisible(direct) && !isVoiceModeButton(direct)) return direct;
 
@@ -755,12 +808,16 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
       '[role="button"][aria-label*="microphone" i]',
       '[role="button"][aria-label*="голос" i]',
       '[role="button"][aria-label*="voice" i]',
+      '[role="button"][aria-label*="speech" i]',
+      '[role="button"][aria-label*="record" i]',
       'button[aria-label*="dictat" i]',
       'button[aria-label*="dictation" i]',
       'button[aria-label*="диктов" i]',
       'button[aria-label*="microphone" i]',
       'button[aria-label*="голос" i]',
-      'button[aria-label*="voice" i]'
+      'button[aria-label*="voice" i]',
+      'button[aria-label*="speech" i]',
+      'button[aria-label*="record" i]'
     ];
 
     const candidates = Array.from(root.querySelectorAll<HTMLElement>(fallbackSelectors.join(",")));
@@ -777,7 +834,10 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
     const aria = norm(btn.getAttribute("aria-label"));
     const title = norm(btn.getAttribute("title"));
     const dt = norm(btn.getAttribute("data-testid"));
+    const hay = `${aria} ${title} ${dt}`;
     if (aria === "dictate button") return true;
+    if (aria === "start dictation") return true;
+    if (hasDictationMarker(hay)) return true;
     if (aria.includes("dictat") || aria.includes("диктов")) return true;
     if (aria.includes("microphone") || aria.includes("voice") || aria.includes("голос"))
       return true;
@@ -800,7 +860,10 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
   };
 
   const findDictationActionContainers = () => {
-    const buttons = findDictationButtonsIn(document);
+    const composerRoot = findComposerRoot();
+    const buttons = composerRoot
+      ? findDictationButtonsIn(composerRoot)
+      : findDictationButtonsIn(document);
     const containers = new Set<HTMLElement>();
     for (const btn of buttons) {
       let p: HTMLElement | null = btn.parentElement;
@@ -833,18 +896,7 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
       title.includes("останов") ||
       text.includes("останов");
     if (!hasStop) return false;
-    const hasDictation =
-      aria.includes("dictation") ||
-      aria.includes("record") ||
-      title.includes("dictation") ||
-      title.includes("record") ||
-      text.includes("dictation") ||
-      text.includes("record") ||
-      aria.includes("диктов") ||
-      title.includes("диктов") ||
-      text.includes("диктов") ||
-      dt.includes("dictation") ||
-      dt.includes("record");
+    const hasDictation = hasDictationMarker(`${aria} ${title} ${text} ${dt}`);
     return hasDictation;
   };
 
@@ -892,12 +944,20 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
   };
 
   const findDictationButton = () => {
-    const direct = findDictationButtonIn(document);
-    if (direct) return direct;
+    const roots: Array<Document | Element> = [];
+    const composerRoot = findComposerRoot();
+    if (composerRoot) roots.push(composerRoot);
 
     const footer = document.querySelector('[data-testid="composer-footer-actions"]');
-    if (!footer) return null;
-    return findDictationButtonIn(footer);
+    if (footer && footer !== composerRoot) roots.push(footer);
+
+    roots.push(document);
+
+    for (const root of roots) {
+      const btn = findDictationButtonIn(root);
+      if (btn) return btn;
+    }
+    return null;
   };
 
   const waitForDictationButton = (timeoutMs = 1500) =>
@@ -1770,7 +1830,9 @@ export function initDictationAutoSendFeature(ctx: FeatureContext): FeatureHandle
 
     const isComposerForm =
       target.getAttribute("data-testid") === "composer" ||
+      target.classList.contains("group/composer") ||
       !!target.querySelector("#prompt-textarea, [data-testid='prompt-textarea']") ||
+      !!target.querySelector("[name='prompt-textarea']") ||
       !!target.querySelector("[data-testid='composer-footer-actions']");
     if (!isComposerForm) return;
 

@@ -29,4 +29,15 @@ describe("wideChat main delta relevance", () => {
     expect(isWideChatRelevantMainDelta([article], [])).toBe(true);
     expect(isWideChatRelevantMainDelta([button], [])).toBe(true);
   });
+
+  it("reacts to current ChatGPT conversation-turn sections", () => {
+    const turn = document.createElement("section");
+    turn.setAttribute("data-testid", "conversation-turn-2");
+
+    const button = document.createElement("button");
+    turn.appendChild(button);
+
+    expect(isWideChatRelevantMainDelta([turn], [])).toBe(true);
+    expect(isWideChatRelevantMainDelta([button], [])).toBe(true);
+  });
 });

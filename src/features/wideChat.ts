@@ -15,11 +15,14 @@ import {
 const WIDE_CHAT_CONTENT_SELECTOR = 'main div[class*="max-w-(--thread-content-max-width)"]';
 const WIDE_CHAT_STYLE_ID = "tm-wide-chat-style";
 const WIDE_CHAT_RELEVANT_SELECTOR =
-  "[data-message-author-role], button, [role='button'], .markdown";
+  "[data-testid^='conversation-turn-'], [data-message-author-role], button, [role='button'], .markdown";
 
 const findConversationTurn = (candidate: Element | null): HTMLElement | null => {
-  const turn = candidate?.closest<HTMLElement>("article") ?? null;
-  return turn?.querySelector("[data-message-author-role]") ? turn : null;
+  const turn =
+    candidate?.closest<HTMLElement>("article, [data-testid^='conversation-turn-']") ?? null;
+  if (!turn) return null;
+  if (turn.getAttribute("data-testid")?.startsWith("conversation-turn-")) return turn;
+  return turn.querySelector("[data-message-author-role]") ? turn : null;
 };
 
 const isRelevantConversationElement = (candidate: Element): boolean => {
@@ -32,8 +35,11 @@ const containsRelevantSelector = (node: Node): boolean => {
   if (node.matches(WIDE_CHAT_CONTENT_SELECTOR) || node.querySelector(WIDE_CHAT_CONTENT_SELECTOR)) {
     return true;
   }
-  if (node.matches("article")) {
-    return node.querySelector("[data-message-author-role]") !== null;
+  if (node.matches("article, [data-testid^='conversation-turn-']")) {
+    return (
+      node.matches("[data-testid^='conversation-turn-']") ||
+      node.querySelector("[data-message-author-role]") !== null
+    );
   }
   if (isRelevantConversationElement(node)) return true;
   return Array.from(node.querySelectorAll(WIDE_CHAT_RELEVANT_SELECTOR)).some((candidate) =>

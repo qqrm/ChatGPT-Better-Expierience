@@ -42,7 +42,11 @@ function mountOpenSidebarButton(onClick?: () => void): HTMLButtonElement {
   return btn;
 }
 
-function mountYourChatsToggle(sidebar: HTMLElement, ariaExpanded = "false"): HTMLButtonElement {
+function mountYourChatsToggle(
+  sidebar: HTMLElement,
+  ariaExpanded = "false",
+  label = "Your chats"
+): HTMLButtonElement {
   const nav = document.createElement("nav");
   nav.setAttribute("aria-label", "Chat history");
   setVisibleRect(nav, 300, 700);
@@ -51,7 +55,7 @@ function mountYourChatsToggle(sidebar: HTMLElement, ariaExpanded = "false"): HTM
   section.className = "group/sidebar-expando-section";
   const button = document.createElement("button");
   button.setAttribute("aria-expanded", ariaExpanded);
-  button.textContent = "Your chats";
+  button.innerHTML = `<h2 class="__menu-label">${label}</h2>`;
   setVisibleRect(button, 260, 28);
   section.appendChild(button);
   nav.appendChild(section);
@@ -165,6 +169,28 @@ describe("autoExpandChats", () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(clicks).toBe(0);
+
+    handle.dispose();
+  });
+
+  it("recognizes the current ChatGPT Chats section heading", async () => {
+    const ctx = makeDomBusCtx();
+    const sidebar = mountSidebarShell(true);
+
+    let clicks = 0;
+    const toggle = mountYourChatsToggle(sidebar, "false", "Chats");
+    toggle.addEventListener("click", () => {
+      clicks += 1;
+      toggle.setAttribute("aria-expanded", "true");
+    });
+
+    const handle = initAutoExpandChatsFeature(ctx);
+
+    ctx.emitNavDelta();
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(clicks).toBe(1);
 
     handle.dispose();
   });

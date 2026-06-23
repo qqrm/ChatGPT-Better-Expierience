@@ -1,11 +1,11 @@
 import { FeatureContext, FeatureHandle } from "../application/featureContext";
 import { findAnyEditSubmitButton, findEditSubmitButton, ComposerInput } from "./chatgptEditor";
 import { routeKeyCombos } from "./keyCombos";
-import { isDisabled } from "../lib/utils";
+import { isDisabled, isElementVisible } from "../lib/utils";
 
 export function initCtrlEnterSendFeature(ctx: FeatureContext): FeatureHandle {
   const norm = (value: string | null | undefined) => (value || "").trim().toLowerCase();
-  const isVisible = (btn: HTMLElement) => btn.offsetParent !== null;
+  const isVisible = (el: HTMLElement) => isElementVisible(el);
 
   const getModeForTrace = () => (/\/c\/[^/?#]+/.test(location.pathname) ? "chat" : "other");
 
@@ -46,20 +46,37 @@ export function initCtrlEnterSendFeature(ctx: FeatureContext): FeatureHandle {
     return input.innerText || input.textContent || "";
   };
 
+  const hasDictationMarker = (value: string) =>
+    /dictat|dictation|microphone|\bmic\b|voice|speech|record|диктов|микроф|голос|надикт|запис/.test(
+      value
+    );
+
   const findComposerInput = (): ComposerInput | null => {
     const selectors = [
-      'textarea[data-testid="prompt-textarea"]',
+      "#prompt-textarea",
       '[contenteditable="true"][data-testid="prompt-textarea"]',
-      "form textarea",
+      '[contenteditable="true"][role="textbox"]',
       'form [contenteditable="true"]',
+      'textarea[data-testid="prompt-textarea"]',
+      'textarea[name="prompt-textarea"]',
+      "form textarea",
       "footer textarea"
     ];
+    const candidates: ComposerInput[] = [];
+    const seen = new Set<Element>();
+
     for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el instanceof HTMLTextAreaElement) return el;
-      if (el instanceof HTMLElement && el.getAttribute("contenteditable") === "true") return el;
+      for (const el of Array.from(document.querySelectorAll(selector))) {
+        if (seen.has(el)) continue;
+        seen.add(el);
+        if (el instanceof HTMLTextAreaElement) candidates.push(el);
+        else if (el instanceof HTMLElement && el.getAttribute("contenteditable") === "true") {
+          candidates.push(el);
+        }
+      }
     }
-    return null;
+
+    return candidates.find((el) => isVisible(el)) ?? candidates[0] ?? null;
   };
 
   const findActiveEditableTarget = (): ComposerInput | null => {
@@ -206,13 +223,24 @@ export function initCtrlEnterSendFeature(ctx: FeatureContext): FeatureHandle {
     const dt = norm(btn.getAttribute("data-testid"));
     const txt = norm(btn.textContent);
 
-    if (aria === "submit") {
+    if (aria === "submit" || aria === "done" || title === "done" || txt === "done") {
       if (btn.classList.contains("composer-submit-btn")) return false;
       let p: HTMLElement | null = btn.parentElement;
       for (let i = 0; i < 8 && p; i += 1) {
-        const hasDictateButton = !!p.querySelector(
-          'button[aria-label="Dictate button"], [role="button"][aria-label="Dictate button"]'
+        const nearbyButtons = Array.from(
+          p.querySelectorAll<HTMLElement>("button, [role='button']")
         );
+        const hasDictateButton = nearbyButtons.some((candidate) => {
+          const candidateAria = norm(candidate.getAttribute("aria-label"));
+          const hay = `${candidateAria} ${norm(candidate.getAttribute("title"))} ${norm(
+            candidate.getAttribute("data-testid")
+          )} ${norm(candidate.textContent)}`;
+          return (
+            candidateAria === "dictate button" ||
+            candidateAria === "start dictation" ||
+            hasDictationMarker(hay)
+          );
+        });
         if (hasDictateButton) return true;
         p = p.parentElement;
       }
@@ -630,7 +658,8 @@ export function initCtrlEnterSendFeature(ctx: FeatureContext): FeatureHandle {
     },
     __test: {
       handleKeyDown: (e: KeyboardEvent) => handleKeyDown(e),
-      handleBeforeInput: (e: InputEvent) => handleBeforeInput(e)
+      handleBeforeInput: (e: InputEvent) => handleBeforeInput(e),
+      findSubmitDictationButton: () => findSubmitDictationButton()
     },
     getStatus: () => ({ active: ctx.settings.ctrlEnterSends })
   };

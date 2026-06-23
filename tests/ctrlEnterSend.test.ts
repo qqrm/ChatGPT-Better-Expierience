@@ -4,6 +4,7 @@ import { makeTestContext } from "./helpers/testContext";
 
 type CtrlEnterTestApi = {
   handleKeyDown?: (e: KeyboardEvent) => void;
+  findSubmitDictationButton?: () => HTMLElement | null;
 };
 
 const setCaretToEnd = (el: HTMLElement) => {
@@ -59,6 +60,37 @@ const makeFakeKeyDown = (target: HTMLElement, opts: FakeKeyDownOptions) => {
     stopImmediatePropagation: vi.fn()
   };
   return event as unknown as KeyboardEvent;
+};
+
+const renderCurrentChatGptComposer = () => {
+  document.body.innerHTML = `
+    <main id="main">
+      <form autocomplete="off" class="group/composer w-full">
+        <div class="wcDTda_prosemirror-parent">
+          <textarea
+            class="wcDTda_fallbackTextarea"
+            name="prompt-textarea"
+            aria-label="Chat with ChatGPT"
+            style="display: none;"
+          ></textarea>
+          <div
+            contenteditable="true"
+            class="ProseMirror"
+            id="prompt-textarea"
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Chat with ChatGPT"
+          >hello</div>
+        </div>
+        <button aria-label="Start dictation" type="button" class="composer-btn">
+          Dictate
+        </button>
+        <button id="composer-submit-button" data-testid="send-button" aria-label="Send prompt" class="composer-submit-btn">
+          Send
+        </button>
+      </form>
+    </main>
+  `;
 };
 
 describe("ctrlEnterSend", () => {
@@ -140,6 +172,64 @@ describe("ctrlEnterSend", () => {
     api.handleKeyDown?.(e);
 
     expect(calls).toContain("send");
+
+    handle.dispose();
+  });
+
+  it("Ctrl+Enter uses current ChatGPT ProseMirror composer instead of hidden fallback textarea", async () => {
+    renderCurrentChatGptComposer();
+
+    const calls: string[] = [];
+    const ctx = makeTestContext({ ctrlEnterSends: true });
+    ctx.helpers.humanClick = (_el, why) => {
+      calls.push(why);
+      return true;
+    };
+
+    const handle = initCtrlEnterSendFeature(ctx);
+    const api = handle.__test as CtrlEnterTestApi;
+    expect(api.handleKeyDown).toBeTypeOf("function");
+
+    const composer = document.getElementById("prompt-textarea") as HTMLElement;
+    expect(composer).not.toBeInstanceOf(HTMLTextAreaElement);
+    setCaretToEnd(composer);
+
+    const e = makeFakeKeyDown(composer, { key: "Enter", ctrlKey: true });
+    api.handleKeyDown?.(e);
+
+    expect(calls).toContain("send");
+
+    handle.dispose();
+  });
+
+  it("Ctrl+Enter submits dictation when Done is next to current Start dictation control", async () => {
+    renderCurrentChatGptComposer();
+
+    const sendButton = document.getElementById("composer-submit-button");
+    sendButton?.insertAdjacentHTML(
+      "beforebegin",
+      '<button type="button" aria-label="Done">Done</button>'
+    );
+    expect(document.querySelector('[aria-label="Done"]')).not.toBeNull();
+
+    const calls: string[] = [];
+    const ctx = makeTestContext({ ctrlEnterSends: true });
+    ctx.helpers.humanClick = (_el, why) => {
+      calls.push(why);
+      return true;
+    };
+
+    const handle = initCtrlEnterSendFeature(ctx);
+    const api = handle.__test as CtrlEnterTestApi;
+    const composer = document.getElementById("prompt-textarea") as HTMLElement;
+    setCaretToEnd(composer);
+    expect(api.findSubmitDictationButton?.()?.getAttribute("aria-label")).toBe("Done");
+
+    const e = makeFakeKeyDown(composer, { key: "Enter", ctrlKey: true });
+    api.handleKeyDown?.(e);
+    await Promise.resolve();
+
+    expect(calls).toContain("submit-dictation");
 
     handle.dispose();
   });

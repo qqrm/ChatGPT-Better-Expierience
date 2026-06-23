@@ -3,11 +3,13 @@ import type { ComposerInput } from "./chatgptEditor";
 
 const MAIN_ROOT_SELECTORS = ['main[role="main"]', "main", '[role="main"]'];
 const PROMPT_SELECTORS = [
-  'textarea[data-testid="prompt-textarea"]',
-  '[contenteditable="true"][data-testid="prompt-textarea"]',
   "#prompt-textarea",
-  "form textarea",
+  '[contenteditable="true"][data-testid="prompt-textarea"]',
+  '[contenteditable="true"][role="textbox"]',
   'form [contenteditable="true"]',
+  'textarea[data-testid="prompt-textarea"]',
+  'textarea[name="prompt-textarea"]',
+  "form textarea",
   "footer textarea"
 ];
 const SEND_BUTTON_SELECTORS = [
@@ -112,12 +114,21 @@ export function findConversationScrollRoot(root: ParentNode = document): HTMLEle
 }
 
 export function findMainComposerInput(root: ParentNode = document): ComposerInput | null {
+  const candidates: ComposerInput[] = [];
+  const seen = new Set<Element>();
+
   for (const selector of PROMPT_SELECTORS) {
-    const el = root.querySelector(selector);
-    if (el instanceof HTMLTextAreaElement) return el;
-    if (el instanceof HTMLElement && el.getAttribute("contenteditable") === "true") return el;
+    for (const el of Array.from(root.querySelectorAll(selector))) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (el instanceof HTMLTextAreaElement) candidates.push(el);
+      else if (el instanceof HTMLElement && el.getAttribute("contenteditable") === "true") {
+        candidates.push(el);
+      }
+    }
   }
-  return null;
+
+  return candidates.find((el) => isVisible(el)) ?? candidates[0] ?? null;
 }
 
 export function findMainComposerForm(root: ParentNode = document): HTMLFormElement | null {

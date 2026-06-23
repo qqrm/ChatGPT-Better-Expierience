@@ -14,6 +14,20 @@ function mountMinimalChat(turns: number) {
   document.close();
 }
 
+function mountCurrentTurnChat(turns: number) {
+  const parts: string[] = [];
+  parts.push('<main id="root"><div class="qMYqUG_convSearchResultHighlightRoot">');
+  for (let i = 0; i < turns; i++) {
+    parts.push(
+      `<section data-testid="conversation-turn-${i + 1}" data-i="${i}"><div>turn ${i}</div></section>`
+    );
+  }
+  parts.push("</div></main>");
+  document.open();
+  document.write(parts.join(""));
+  document.close();
+}
+
 async function tick(n = 3) {
   for (let i = 0; i < n; i++) {
     await new Promise((r) => setTimeout(r, 0));
@@ -57,6 +71,27 @@ describe("trimChatDom", () => {
 
     // 7 hidden -> restore ceil(7*0.25)=2, so 5 hidden left.
     expect(hiddenAfter.length).toBe(5);
+
+    handle.dispose();
+  });
+
+  it("trims current ChatGPT conversation-turn sections", async () => {
+    mountCurrentTurnChat(12);
+
+    const ctx = makeTestContext({
+      trimChatDom: true,
+      trimChatDomKeep: 5
+    });
+
+    const handle = initTrimChatDomFeature(ctx);
+    await tick(5);
+
+    const hidden = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid^="conversation-turn-"]')
+    ).filter((turn) => turn.getAttribute("data-qqrm-trimmed") === "1");
+
+    expect(hidden.length).toBe(7);
+    expect(document.getElementById("qqrm-trim-chat-dom-placeholder")).toBeTruthy();
 
     handle.dispose();
   });

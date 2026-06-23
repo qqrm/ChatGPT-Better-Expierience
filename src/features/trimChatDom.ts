@@ -41,16 +41,24 @@ export function initTrimChatDomFeature(ctx: FeatureContext): FeatureHandle {
     null;
 
   const findChatContainer = (root: HTMLElement): HTMLElement => {
+    const firstTurn = root.querySelector<HTMLElement>("[data-testid^='conversation-turn-']");
     return (
       root.querySelector<HTMLElement>("[data-testid='conversation-turns']") ??
+      firstTurn?.parentElement ??
       root.querySelector<HTMLElement>("section") ??
       root
     );
   };
 
   const findTurns = (root: HTMLElement) => {
-    const articles = Array.from(root.querySelectorAll<HTMLElement>("article"));
-    return articles.filter((a) => a.querySelector("[data-message-author-role]"));
+    const turns = Array.from(
+      root.querySelectorAll<HTMLElement>("article, [data-testid^='conversation-turn-']")
+    );
+    return turns.filter(
+      (turn) =>
+        turn.getAttribute("data-testid")?.startsWith("conversation-turn-") ||
+        turn.querySelector("[data-message-author-role]")
+    );
   };
 
   const ensureStyle = () => {
@@ -204,8 +212,9 @@ export function initTrimChatDomFeature(ctx: FeatureContext): FeatureHandle {
 
   const isRelevantElement = (el: Element) =>
     el.matches("article") ||
+    el.matches("[data-testid^='conversation-turn-']") ||
     el.matches("[data-message-author-role]") ||
-    !!el.querySelector("article, [data-message-author-role]");
+    !!el.querySelector("article, [data-testid^='conversation-turn-'], [data-message-author-role]");
 
   const isRelevantDelta = (added: Element[], removed: Element[]) => {
     for (const el of added) if (isRelevantElement(el)) return true;
